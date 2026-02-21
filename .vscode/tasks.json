@@ -1,0 +1,31 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "type": "cppbuild",
+      "label": "Собрать проект синхронизации",
+      "command": "C:/Development/utils/w64devkit/bin/g++.exe",
+      "args": [
+        "-fdiagnostics-color=always",
+        "-g",
+        "${fileDirname}\\main.cpp", // Собираем именно main.cpp в этой папке
+        "-o",
+        "${fileDirname}\\app.exe", // Результат — app.exe
+        "-lole32", // Библиотека для COM (нужна для miniaudio)
+        "-lwinmm" // Библиотека для звука Windows
+      ],
+      "options": {
+        "cwd": "${fileDirname}", // Запускаем компиляцию в папке проекта
+        "env": {
+          "PATH": "C:/Development/utils/w64devkit/bin;${env:PATH}"
+        }
+      },
+      "problemMatcher": ["$gcc"],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "detail": "Полная сборка с библиотеками звука"
+    }
+  ]
+}
