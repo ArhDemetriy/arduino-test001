@@ -6,6 +6,10 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
+extern "C"
+{
+#include "kiss_fftr.h"
+}
 
 HANDLE hSerial;
 

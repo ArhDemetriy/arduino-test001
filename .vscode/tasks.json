@@ -3,19 +3,22 @@
   "tasks": [
     {
       "type": "cppbuild",
-      "label": "Собрать проект синхронизации",
+      "label": "Собрать проект синхронизации с FFT",
       "command": "C:/Development/utils/w64devkit/bin/g++.exe",
       "args": [
         "-fdiagnostics-color=always",
         "-g",
-        "${fileDirname}\\main.cpp", // Собираем именно main.cpp в этой папке
+        "${fileDirname}\\main.cpp",
+        "${fileDirname}\\lib\\kissfft\\kiss_fft.c",
+        "${fileDirname}\\lib\\kissfft\\kiss_fftr.c",
+        "-I${fileDirname}\\lib\\kissfft", // Указываем путь к заголовкам .h
         "-o",
-        "${fileDirname}\\app.exe", // Результат — app.exe
-        "-lole32", // Библиотека для COM (нужна для miniaudio)
-        "-lwinmm" // Библиотека для звука Windows
+        "${fileDirname}\\app.exe",
+        "-lole32",
+        "-lwinmm"
       ],
       "options": {
-        "cwd": "${fileDirname}", // Запускаем компиляцию в папке проекта
+        "cwd": "${fileDirname}",
         "env": {
           "PATH": "C:/Development/utils/w64devkit/bin;${env:PATH}"
         }
@@ -25,7 +28,7 @@
         "kind": "build",
         "isDefault": true
       },
-      "detail": "Полная сборка с библиотеками звука"
+      "detail": "Сборка main.cpp вместе с исходниками kissfft"
     }
   ]
 }
