@@ -25,84 +25,99 @@ bool initSerial(const char *portName)
     return SetCommState(hSerial, &dcbSerialParams);
 }
 
-void sendPacket(uint8_t bass, uint8_t mid, uint8_t high)
+// 1. Создаем перечисление для удобного выбора типа фильтра
+enum FilterType
 {
-    uint8_t packet[] = {0xFE, bass, mid, high};
-    DWORD written;
-    WriteFile(hSerial, packet, sizeof(packet), &written, NULL);
-}
-
-// Структура для хранения фильтров и буферов
-struct AudioDSP
-{
-    ma_lpf lpf; // Фильтр низких (Бас)
-    ma_bpf bpf; // Фильтр средних (СЧ)
-    ma_hpf hpf; // Фильтр высоких (ВЧ)
-
-    // Временные массивы для отфильтрованного звука
-    std::vector<float> bufL;
-    std::vector<float> bufM;
-    std::vector<float> bufH;
+    FILTER_LPF, // Пропускает только низкие (Бас)
+    FILTER_BPF, // Пропускает средние (Голос)
+    FILTER_HPF  // Пропускает высокие (Тарелочки)
 };
+
+// 2. Описываем структуру одного канала (аналог твоего PinData)
+struct BandData
+{
+    FilterType type;  // Тип фильтра
+    double freq;      // Частота среза/центра
+    float multiplier; // Усилитель громкости (чтобы подтянуть тихие частоты)
+
+    // Храним все виды фильтров miniaudio (использоваться будет только нужный)
+    ma_lpf lpf;
+    ma_bpf bpf;
+    ma_hpf hpf;
+
+    std::vector<float> buffer; // Персональный буфер для этого канала
+    uint8_t currentVal = 0;    // Текущая громкость (0-255)
+};
+
+// 3. Динамическая отправка пакета (собирает пакет под любое количество каналов)
+void sendPacket(const std::vector<BandData> &bands)
+{
+    std::vector<uint8_t> packet;
+    packet.push_back(0xFE); // Стартовый маркер
+
+    for (const auto &band : bands)
+    {
+        packet.push_back(band.currentVal);
+    }
+
+    DWORD written;
+    WriteFile(hSerial, packet.data(), packet.size(), &written, NULL);
+}
 
 void data_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uint32 frameCount)
 {
-    // Получаем наш DSP объект
-    AudioDSP *dsp = (AudioDSP *)pDevice->pUserData;
+    // Получаем ссылку на наш массив диапазонов
+    auto *bands = (std::vector<BandData> *)pDevice->pUserData;
 
-    // Увеличиваем размер буферов, если miniaudio прислал больше кадров, чем обычно
-    if (dsp->bufL.size() < frameCount)
+    // 4. Перебираем каждый диапазон и обрабатываем его (как в твоем loop())
+    for (auto &band : *bands)
     {
-        dsp->bufL.resize(frameCount);
-        dsp->bufM.resize(frameCount);
-        dsp->bufH.resize(frameCount);
+        if (band.buffer.size() < frameCount)
+        {
+            band.buffer.resize(frameCount);
+        }
+
+        // Пропускаем звук через нужный фильтр
+        if (band.type == FILTER_LPF)
+        {
+            ma_lpf_process_pcm_frames(&band.lpf, band.buffer.data(), pInput, frameCount);
+        }
+        else if (band.type == FILTER_BPF)
+        {
+            ma_bpf_process_pcm_frames(&band.bpf, band.buffer.data(), pInput, frameCount);
+        }
+        else if (band.type == FILTER_HPF)
+        {
+            ma_hpf_process_pcm_frames(&band.hpf, band.buffer.data(), pInput, frameCount);
+        }
+
+        // Ищем пиковую громкость
+        float maxAmp = 0;
+        for (ma_uint32 i = 0; i < frameCount; i++)
+        {
+            if (fabsf(band.buffer[i]) > maxAmp)
+                maxAmp = fabsf(band.buffer[i]);
+        }
+
+        // Вычисляем значение и применяем множитель
+        band.currentVal = (uint8_t)(fminf(maxAmp * band.multiplier, 1.0f) * 255.0f);
     }
 
-    // Пропускаем оригинальный звук через 3 разных фильтра
-    ma_lpf_process_pcm_frames(&dsp->lpf, dsp->bufL.data(), pInput, frameCount);
-    ma_bpf_process_pcm_frames(&dsp->bpf, dsp->bufM.data(), pInput, frameCount);
-    ma_hpf_process_pcm_frames(&dsp->hpf, dsp->bufH.data(), pInput, frameCount);
+    // Отправляем все значения в порт
+    sendPacket(*bands);
 
-    float maxL = 0, maxM = 0, maxH = 0;
-
-    // Ищем максимальную амплитуду в каждой частотной полосе
-    for (ma_uint32 i = 0; i < frameCount; i++)
+    // Динамический вывод в консоль
+    std::cout << "\r";
+    for (size_t i = 0; i < bands->size(); ++i)
     {
-        if (fabsf(dsp->bufL[i]) > maxL)
-            maxL = fabsf(dsp->bufL[i]);
-        if (fabsf(dsp->bufM[i]) > maxM)
-            maxM = fabsf(dsp->bufM[i]);
-        if (fabsf(dsp->bufH[i]) > maxH)
-            maxH = fabsf(dsp->bufH[i]);
+        std::cout << " | CH" << (i + 1) << ": " << std::setw(3) << (int)(*bands)[i].currentVal;
     }
-
-    // Переводим в байты (0-255).
-    // Mids и Highs мы умножаем (x1.5 и x2.0), так как в музыке басы физически громче,
-    // и без усиления средние и высокие диоды будут светить тускло.
-    uint8_t valBass = (uint8_t)(fminf(maxL * 1.0f, 1.0f) * 255.0f);
-    uint8_t valMid = (uint8_t)(fminf(maxM * 1.5f, 1.0f) * 255.0f);
-    uint8_t valHigh = (uint8_t)(fminf(maxH * 2.0f, 1.0f) * 255.0f);
-
-    sendPacket(valBass, valMid, valHigh);
-
-    // Вывод в консоль для дебага
-    std::cout
-        << " | High: " << std::setw(3) << (int)valHigh
-        << " | Mid: " << std::setw(3) << (int)valMid
-        << " | Bass: " << std::setw(3) << (int)valBass
-        << "    \r" << std::flush;
-
-    // std::cout
-    //     << "\x1b[3A" // Поднимаемся на 3 строки вверх
-    //     << "High: " << std::setw(3) << (int)valHigh << "    \x1b[K"
-    //     << "Mid:  " << std::setw(3) << (int)valMid << "    \x1b[K\n"
-    //     << "Bass: " << std::setw(3) << (int)valBass << "    \x1b[K\n"
-    //     << std::flush;
+    std::cout << "    " << std::flush;
 }
 
 int main()
 {
-    std::cout << "--- 3-Band Audio Visualizer ---" << std::endl;
+    std::cout << "--- Multi-Band Audio Visualizer ---" << std::endl;
 
     if (!initSerial("\\\\.\\COM3"))
     {
@@ -118,35 +133,48 @@ int main()
     config.sampleRate = 44100;
     config.dataCallback = data_callback;
 
-    // Инициализация фильтров
-    AudioDSP dsp;
+    // 5. НАСТРОЙКА КАНАЛОВ (Здесь ты можешь добавлять сколько угодно диапазонов!)
+    std::vector<BandData> bands = {
+        // 1. Глубокий бас (Sub-bass). Удары бочки и низкий гул.
+        {FILTER_LPF, 100.0, 1.0f},
 
-    // 1. Конфиг для НЧ (Бас) - порядок 2
-    ma_lpf_config lpfCfg = ma_lpf_config_init(config.playback.format, config.playback.channels, config.sampleRate, 200.0, 2);
-    if (ma_lpf_init(&lpfCfg, NULL, &dsp.lpf) != MA_SUCCESS)
+        // 2. Мид-бас (Mid-bass). Бас-гитара и "тело" ударных.
+        {FILTER_BPF, 300.0, 1.0f},
+
+        // 3. Нижняя середина (Low-mids). Основной тон мужского вокала.
+        {FILTER_BPF, 1000.0, 1.0f},
+
+        // 4. Верхняя середина (High-mids). Женский вокал, гитарное соло.
+        {FILTER_BPF, 2500.0, 1.0f},
+
+        // 5. Презенс (Presence). Четкость инструментов, перкуссия.
+        {FILTER_BPF, 5000.0, 1.0f},
+
+        // 6. Высокие частоты (Brilliance/Highs). Тарелки, "воздух", звон.
+        {FILTER_HPF, 10000.0, 1.0f}};
+
+    // Автоматическая инициализация всех фильтров в массиве
+    for (auto &band : bands)
     {
-        std::cerr << "Failed to init LPF" << std::endl;
-        return -1;
+        if (band.type == FILTER_LPF)
+        {
+            ma_lpf_config cfg = ma_lpf_config_init(config.playback.format, config.playback.channels, config.sampleRate, band.freq, 2);
+            ma_lpf_init(&cfg, NULL, &band.lpf);
+        }
+        else if (band.type == FILTER_BPF)
+        {
+            ma_bpf_config cfg = ma_bpf_config_init(config.playback.format, config.playback.channels, config.sampleRate, band.freq, 2);
+            ma_bpf_init(&cfg, NULL, &band.bpf);
+        }
+        else if (band.type == FILTER_HPF)
+        {
+            ma_hpf_config cfg = ma_hpf_config_init(config.playback.format, config.playback.channels, config.sampleRate, band.freq, 2);
+            ma_hpf_init(&cfg, NULL, &band.hpf);
+        }
     }
 
-    // 2. Конфиг для СЧ - порядок 2 (обязательно четный для BPF)
-    ma_bpf_config bpfCfg = ma_bpf_config_init(config.playback.format, config.playback.channels, config.sampleRate, 1500.0, 2);
-    if (ma_bpf_init(&bpfCfg, NULL, &dsp.bpf) != MA_SUCCESS)
-    {
-        std::cerr << "Failed to init BPF" << std::endl;
-        return -1;
-    }
-
-    // 3. Конфиг для ВЧ - порядок 2
-    ma_hpf_config hpfCfg = ma_hpf_config_init(config.playback.format, config.playback.channels, config.sampleRate, 5000.0, 2);
-    if (ma_hpf_init(&hpfCfg, NULL, &dsp.hpf) != MA_SUCCESS)
-    {
-        std::cerr << "Failed to init HPF" << std::endl;
-        return -1;
-    }
-
-    // Передаем нашу структуру с фильтрами в коллбэк
-    config.pUserData = &dsp;
+    // Передаем ссылку на массив в callback-функцию
+    config.pUserData = &bands;
 
     ma_device device;
     if (ma_device_init(NULL, &config, &device) != MA_SUCCESS)
