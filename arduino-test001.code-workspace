@@ -4,7 +4,4 @@
     { "path": "win_audio_parser" },
     { "path": "common" },
   ],
-  "settings": {
-    "C_Cpp.default.configurationProvider": "CMake Tools",
-  },
 }
