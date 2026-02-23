@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.14) # 3.14+ лучше работает с FetchContent
+cmake_minimum_required(VERSION 3.14)
 project(WinAudioParser LANGUAGES C CXX)
 
 # Глобальные настройки
@@ -7,32 +7,27 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # === 1. УДАЛЕННЫЕ ЗАВИСИМОСТИ ===
 include(FetchContent)
+
+set(KISSFFT_TOOLS OFF CACHE BOOL "" FORCE)
+set(KISSFFT_TEST OFF  CACHE BOOL "" FORCE)
+
 FetchContent_Declare(
     kissfft
     GIT_REPOSITORY https://github.com/mborgerding/kissfft.git
-    GIT_TAG        v131
+    GIT_TAG        131.2.0
 )
 FetchContent_MakeAvailable(kissfft)
-
-# print path for debugging
-message(STATUS "kissfft_SOURCE_DIR='${kissfft_SOURCE_DIR}'")
 
 # === 2. ВАШЕ ПРИЛОЖЕНИЕ (ЦЕЛЬ) ===
 add_executable(${PROJECT_NAME}
     "src/main.cpp"
-    "${kissfft_SOURCE_DIR}/kiss_fft.c"
-    "${kissfft_SOURCE_DIR}/tools/kiss_fftr.c"
 )
 
-# ensure C sources are treated as C (not C++)
-set_source_files_properties(
-    "${kissfft_SOURCE_DIR}/kiss_fft.c"
-    "${kissfft_SOURCE_DIR}/tools/kiss_fftr.c"
-    PROPERTIES LANGUAGE C
-)
+# подсоединяем библиотеку из fetchcontent
+# (kissfft::kissfft создаётся в субпроекте)
+target_link_libraries(${PROJECT_NAME} PRIVATE kissfft::kissfft)
 
 # === 3. ЛОКАЛЬНЫЕ ПУТИ ===
-# Вычисляем красивый абсолютный путь к общей папке
 file(REAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../common" COMMON_DIR)
 
 target_include_directories(${PROJECT_NAME} PRIVATE
