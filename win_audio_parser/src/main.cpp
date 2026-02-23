@@ -6,13 +6,15 @@
 #include <cmath>
 #include <cstdint>
 #include <iomanip>
-
+#include <algorithm>
+#include "shared_protocol.h"
 extern "C"
 {
 #include "kiss_fftr.h"
 }
 
-#define FFT_SIZE 1024 // Размер окна (степень двойки)
+#define FFT_SIZE 4096 // Размер окна (степень двойки)
+// #define FFT_SIZE 2048 // Размер окна (степень двойки)
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -146,7 +148,11 @@ void data_callback(ma_device *pDevice, void *pOutput, const void *pInput, ma_uin
                 dsp->bands[b].currentVal = (uint8_t)(normalized * 255.0f);
             }
 
-            sendPacket(dsp->bands);
+            const bool hasSignal = std::any_of(dsp->bands.begin(), dsp->bands.end(), [](const auto &item)
+                                               { return item.currentVal > 0; });
+
+            if (hasSignal)
+                sendPacket(dsp->bands);
 
             std::cout << "\r";
             for (size_t b = 0; b < dsp->bands.size(); ++b)

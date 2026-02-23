@@ -1,0 +1,14 @@
+{
+  "folders": [
+    {
+      "path": "arduino_controller",
+    },
+    {
+      "path": "win_audio_parser",
+    },
+  ],
+  "settings": {
+    "C_Cpp.default.compileCommands": [
+    ],
+  },
+}

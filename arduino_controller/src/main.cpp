@@ -1,6 +1,7 @@
 #include <Arduino.h>
+#include "shared_protocol.h"
 
-const int fadeInterval = 10;
+const int fadeInterval = 80;
 decltype(millis()) nextFadeTime = 0;
 
 void setup()

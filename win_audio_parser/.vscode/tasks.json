@@ -8,17 +8,19 @@
       "args": [
         "-fdiagnostics-color=always",
         "-g",
-        "${fileDirname}\\main.cpp",
-        "${fileDirname}\\lib\\kissfft\\kiss_fft.c",
-        "${fileDirname}\\lib\\kissfft\\kiss_fftr.c",
-        "-I${fileDirname}\\lib\\kissfft", // Указываем путь к заголовкам .h
+        "${workspaceFolder}\\src\\main.cpp",
+        "-I${workspaceFolder}\\..\\common",
+        "-I${workspaceFolder}\\lib\\miniaudio",
+        "-I${workspaceFolder}\\lib\\kissfft",
+        "${workspaceFolder}\\lib\\kissfft\\kiss_fft.c",
+        "${workspaceFolder}\\lib\\kissfft\\kiss_fftr.c",
         "-o",
-        "${fileDirname}\\app.exe",
+        "${workspaceFolder}\\build\\app.exe",
         "-lole32",
         "-lwinmm"
       ],
       "options": {
-        "cwd": "${fileDirname}",
+        "cwd": "${workspaceFolder}",
         "env": {
           "PATH": "C:/Development/utils/w64devkit/bin;${env:PATH}"
         }
